@@ -41,4 +41,17 @@ distclean: clean
 
 .PHONY: all clean distclean gen_headers
 
-.PHONY: all clean
+# --- Minimal pure inference build (no args) ---
+# Generate weights.h from trained_reduced_cnn.bin
+weights.h: export_weights.py trained_reduced_cnn.bin
+	python3 export_weights.py trained_reduced_cnn.bin weights.h
+
+# Build the tiny pure-C inference program
+mb_infer_pure: mb_infer_pure.c weights.h
+	$(CC) -O2 -s -std=c11 -o $@ mb_infer_pure.c
+
+# Convenience target: build weights and run inference once
+run_infer: weights.h mb_infer_pure
+	./mb_infer_pure
+
+.PHONY: all clean run_infer
