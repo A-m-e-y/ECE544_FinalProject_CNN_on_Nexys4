@@ -1,6 +1,7 @@
 # Prerequisites
 *.d
 RTL/
+.vscode/
 
 # Object files
 *.o

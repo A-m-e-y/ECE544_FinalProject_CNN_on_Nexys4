@@ -5,7 +5,7 @@
 // After running export_weights.py, ensure weights.h is present.
 #include "weights.h"
 // Pick any generated image header; you can change this include to test another.
-#include "generated_images/3/img_3_26.h"
+#include "generated_images/8/img_8_53.h"
 
 // Network dimensions (fixed, keep small)
 #define IMG_SIZE 10
@@ -188,7 +188,7 @@ static void classifier_forward(const uint32_t *act_bits /* channel-major [c][h][
 int main(void)
 {
     // Input image bits from header (grayscale, 10x10, single channel)
-    const uint32_t *img_bits = img_3_26; // name provided by included header
+    const uint32_t *img_bits = img_8_53; // name provided by included header
 
     // Buffers: keep minimal sizes
     // act1: 10x10x8, act2: 10x10x16, act3: 10x10x32

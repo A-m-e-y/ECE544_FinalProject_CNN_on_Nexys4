@@ -1,5 +1,6 @@
 {
     "files.associations": {
-        "img_3_26.h": "c"
+        "img_3_26.h": "c",
+        "weights.h": "c"
     }
 }
