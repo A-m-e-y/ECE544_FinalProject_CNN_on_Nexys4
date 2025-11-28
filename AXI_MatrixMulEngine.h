@@ -2,13 +2,11 @@
 #ifndef AXI_MATRIXMULENGINE_H
 #define AXI_MATRIXMULENGINE_H
 
-
-/****************** Include Files ********************/
-#include "xil_types.h"
-#include "xstatus.h"
-#include <stdint.h>
 #include <stdbool.h>
-#include "xil_io.h"
+#include "xil_types.h"
+#include <stdint.h>
+#include "xstatus.h"
+
 
 #define AXI_MATRIXMULENGINE_S00_AXI_SLV_REG0_OFFSET 0
 #define AXI_MATRIXMULENGINE_S00_AXI_SLV_REG1_OFFSET 4
@@ -44,9 +42,9 @@
 // #define MATRIXMUL_STATUS_ERROR_MASK     0x00000004
 
 // Maximum dimensions (change to match RTL parameters)
-#define MATRIXMUL_MAX_M                 16
-#define MATRIXMUL_MAX_K                 16
-#define MATRIXMUL_MAX_N                 16
+#define MATRIXMUL_MAX_M                 100
+#define MATRIXMUL_MAX_K                 144
+#define MATRIXMUL_MAX_N                 32
 
 /**************************** Type Definitions *****************************/
 /**

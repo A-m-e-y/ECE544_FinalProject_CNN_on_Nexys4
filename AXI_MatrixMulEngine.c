@@ -1,7 +1,12 @@
-#include "AXI_MatrixMulEngine.h"
+
+/****************** Include Files ********************/
+#include "xil_io.h"
 #include <string.h>
 #include <xil_printf.h>
+#include "sleep.h"
+#include "xtmrctr.h"
 
+#include "AXI_MatrixMulEngine.h"
 // Helper function to convert float to 32-bit representation
 static inline uint32_t float_to_uint32(float f) {
     union {
@@ -26,18 +31,18 @@ static inline float uint32_to_float(uint32_t u) {
  * Set matrix dimensions
  */
 void matrixmul_set_dimensions(uint32_t base_addr, uint32_t m, uint32_t k, uint32_t n) {
-    xil_printf("Setting Matrix Dimensions\n");
+    // xil_printf("Setting Matrix Dimensions\n");
     AXI_MATRIXMULENGINE_mWriteReg(base_addr, MATRIXMUL_M_DIM_REG_OFFSET, m);
     AXI_MATRIXMULENGINE_mWriteReg(base_addr, MATRIXMUL_K_DIM_REG_OFFSET, k);
     AXI_MATRIXMULENGINE_mWriteReg(base_addr, MATRIXMUL_N_DIM_REG_OFFSET, n);
-    xil_printf("Done Matrix Dimensions\n");
+    // xil_printf("Done Matrix Dimensions\n");
 }
 
 /**
  * Write Matrix A to hardware (row-major order)
  */
 void matrixmul_write_matrix_a(uint32_t base_addr, const float *matrix, uint32_t m, uint32_t k) {
-    xil_printf("Setting Matrix A\n");
+    // xil_printf("Setting Matrix A\n");
     uint32_t control = MATRIXMUL_CTRL_MEMSEL_A;
     AXI_MATRIXMULENGINE_mWriteReg(base_addr, MATRIXMUL_CONTROL_REG_OFFSET, control);
     
@@ -45,14 +50,14 @@ void matrixmul_write_matrix_a(uint32_t base_addr, const float *matrix, uint32_t 
         AXI_MATRIXMULENGINE_mWriteReg(base_addr, MATRIXMUL_MEM_ADDR_REG_OFFSET, i);
         AXI_MATRIXMULENGINE_mWriteReg(base_addr, MATRIXMUL_MEM_WDATA_REG_OFFSET, float_to_uint32(matrix[i]));
     }
-    xil_printf("Done Matrix A\n");
+    // xil_printf("Done Matrix A\n");
 }
 
 /**
  * Write Matrix B to hardware (row-major order)
  */
 void matrixmul_write_matrix_b(uint32_t base_addr, const float *matrix, uint32_t k, uint32_t n) {
-    xil_printf("Setting Matrix B\n");
+    // xil_printf("Setting Matrix B\n");
     uint32_t control = MATRIXMUL_CTRL_MEMSEL_B;
     AXI_MATRIXMULENGINE_mWriteReg(base_addr, MATRIXMUL_CONTROL_REG_OFFSET, control);
     
@@ -60,14 +65,14 @@ void matrixmul_write_matrix_b(uint32_t base_addr, const float *matrix, uint32_t 
         AXI_MATRIXMULENGINE_mWriteReg(base_addr, MATRIXMUL_MEM_ADDR_REG_OFFSET, i);
         AXI_MATRIXMULENGINE_mWriteReg(base_addr, MATRIXMUL_MEM_WDATA_REG_OFFSET, float_to_uint32(matrix[i]));
     }
-    xil_printf("Done Matrix B\n");
+    // xil_printf("Done Matrix B\n");
 }
 
 /**
  * Start computation
  */
 void matrixmul_start(uint32_t base_addr) {
-    xil_printf("Starting Matrix MUL\n");
+    // xil_printf("Starting Matrix MUL\n");
     uint32_t control = MATRIXMUL_CTRL_START_MASK;
     AXI_MATRIXMULENGINE_mWriteReg(base_addr, MATRIXMUL_CONTROL_REG_OFFSET, control);
 }
@@ -77,7 +82,7 @@ void matrixmul_start(uint32_t base_addr) {
  */
 bool matrixmul_is_done(uint32_t base_addr) {
     uint32_t status = AXI_MATRIXMULENGINE_mReadReg(base_addr, MATRIXMUL_STATUS_REG_OFFSET);
-    xil_printf("Read status = %0d\n", status);
+    // xil_printf("Read status = %0d\n", status);
     return (status & MATRIXMUL_STATUS_DONE_MASK) != 0;
 }
 
@@ -87,7 +92,7 @@ bool matrixmul_is_done(uint32_t base_addr) {
 void matrixmul_wait_done(uint32_t base_addr) {
     while (!matrixmul_is_done(base_addr)) {
         // Polling loop
-        usleep(1000*1000);
+        // usleep(1000*1000);
     }
 }
 
