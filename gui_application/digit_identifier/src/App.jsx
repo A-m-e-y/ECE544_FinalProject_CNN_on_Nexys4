@@ -27,7 +27,6 @@ const App = () => {
             const getPos = (e) => {
                 if (e.touches && e.touches.length > 0) {
                     const rect = canvas.getBoundingClientRect();
-                    console.log(rect);
                     return {
                         x: e.touches[0].clientX - rect.left,
                         y: e.touches[0].clientY - rect.top,
@@ -108,17 +107,15 @@ const App = () => {
         const data = img.data;
         setFpgaDigit(null);
         
-        // Convert to grayscale
         const gray = [];
         for (let i = 0; i < data.length; i += 4) {
             const r = data[i];
             const g = data[i + 1];
             const b = data[i + 2];
-            const y = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+            const y = (0.299 * r + 0.587 * g + 0.114 * b);
             gray.push(y);
         }
         
-        // Downsample 200x200 → 10x10 (block averaging 20x20)
         const block = 20;
         const out = [];
         for (let y = 0; y < 10; y++) {
@@ -130,10 +127,9 @@ const App = () => {
                         sum += gray[px];
                     }
                 }
-                out.push(Math.round(sum / (block * block)));
+                out.push(sum / (block * block));
             }
         }
-        
         return out;
     };
     
@@ -157,13 +153,88 @@ const App = () => {
         minHeight: '100vh',
     };
 
+    // const sendToFpgaUART = async (array10x10) => {
+    //     return new Promise((resolve) => {
+    //         setTimeout(() => {
+    //             const simulatedDigit = Math.floor(Math.random() * 10);
+    //             resolve(simulatedDigit);
+    //         }, 3000); 
+    //     });
+    // };
+
     const sendToFpgaUART = async (array10x10) => {
-        return new Promise((resolve) => {
-            setTimeout(() => {
-                const simulatedDigit = Math.floor(Math.random() * 10);
-                resolve(simulatedDigit);
-            }, 3000); 
-        });
+        try {
+            console.log("Requesting serial port…");
+            const port = await navigator.serial.requestPort();
+            await port.open({ baudRate: 115200 });
+
+            console.log("Port opened.");
+
+            const writer = port.writable.getWriter();
+            const reader = port.readable.getReader();
+
+            const PKT_START = 0xA5;
+            const PKT_CMD_IMAGE = 0x01;
+            const PKT_STOP = 0x5A;
+
+            // ---- Build packet exactly like Python ----
+            const packet = [];
+
+            // Start + Command + length (100 = 0x64 = 100 words)
+            packet.push(PKT_START);
+            packet.push(PKT_CMD_IMAGE);
+            packet.push(100 & 0xFF, (100 >> 8) & 0xFF);
+
+            // Convert each float → IEEE754 float32 → uint32 → LE bytes
+            for (let i = 0; i < 100; i++) {
+                const fval = array10x10[i];
+
+                const buf = new ArrayBuffer(4);
+                const view = new DataView(buf);
+
+                // EXACT Python behavior:
+                // struct.pack('<I', u) where u = float32 → uint32 bits
+                // 1) Convert JS float → float32
+                // 2) Read same 4 bytes as uint32 little-endian
+                view.setFloat32(0, fval, true);
+
+                packet.push(view.getUint8(0));
+                packet.push(view.getUint8(1));
+                packet.push(view.getUint8(2));
+                packet.push(view.getUint8(3));
+            }
+
+            // End byte
+            packet.push(PKT_STOP);
+
+            // Convert to Uint8Array
+            const pktBytes = new Uint8Array(packet);
+            console.log("TX Packet:", pktBytes);
+
+            // ---- SEND packet ----
+            await writer.write(pktBytes);
+            writer.releaseLock();
+            console.log("Packet sent. Waiting for FPGA response…");
+
+            // ---- READ exactly 1 byte ----
+            const { value/*, done*/ } = await reader.read();
+            reader.releaseLock();
+            await port.close();
+            
+            if (!value || value.length === 0) {
+                console.error("No FPGA response (timeout)");
+                return null;
+            }
+
+            const prediction = value[0];
+            console.log("FPGA Returned:", prediction);
+
+            return prediction; // return same as python script
+
+        } catch (err) {
+            console.error("UART Error:", err);
+            return null;
+        }
     };
 
     const handleSubmit = async () => {
@@ -176,10 +247,24 @@ const App = () => {
         setIsProcessing(false);
         setResult([]);
     };
+
+    const float32ToHex = (num, ind) => {
+        const buffer = new ArrayBuffer(4);
+        const view = new DataView(buffer);
+
+        view.setFloat32(0, num, false);
+        let hex = '';
+        for (let i = 0; i < 4; i++) {
+            let h = view.getUint8(i).toString(16);
+            if (h.length === 1) h = '0' + h;
+            hex += h;
+        }
+        return '0x' + hex.toUpperCase();
+    };
     
     return (
     <div className="App min-h-screen bg-gray-900 bg-blend-overlay" style={backgroundStyle}>
-        <div className="max-w-fit mx-auto pt-20">
+        <div className="max-w-fit mx-auto pt-12">
 
             <p className="bg-gradient-to-r from-fuchsia-400 via-purple-500 to-indigo-400 
                         bg-clip-text text-transparent text-7xl font-extrabold 
@@ -246,14 +331,12 @@ const App = () => {
 
             <div className="flex gap-10 justify-center items-start mt-10">
 
-                { (result.length !== 0 || fpgaDigit) && <div className="
-                    p-4 bg-gray-900/30 rounded-xl 
-                    shadow-[0_0_25px_rgba(100,100,255,0.3)]
-                    border border-indigo-500/40
-                    backdrop-blur-xl
-                    w-fit
-                ">
-
+                { (result.length !== 0 || fpgaDigit) && 
+                    <div className="p-4 bg-gray-900/30 rounded-xl 
+                                    shadow-[0_0_25px_rgba(100,100,255,0.3)]
+                                    border border-indigo-500/40
+                                    backdrop-blur-xl
+                                    w-fit">
                     {isProcessing ? (
                         <div className="flex flex-col items-center justify-center px-20 py-10">
                             <i className="pi pi-spin pi-spinner text-6xl text-indigo-400"></i>
@@ -277,15 +360,14 @@ const App = () => {
                             {result.map((value, index) => (
                                 <div
                                     key={index}
-                                    className="w-10 h-10 flex items-center justify-center 
-                                               bg-white/90 border border-gray-300 rounded-md 
-                                               text-sm font-medium text-gray-900 shadow-sm">
-                                    {value}
+                                    className="w-28 h-10 flex items-center justify-center 
+                                            bg-white/90 border border-gray-300 rounded-md 
+                                            text-lg font-mono text-gray-900 shadow-md text-center">
+                                    {float32ToHex(value, index)}
                                 </div>
                             ))}
                         </div>
                     )}
-
                 </div>}
             </div>
 
