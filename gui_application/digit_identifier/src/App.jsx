@@ -89,7 +89,6 @@ const App = () => {
         const canvas = canvasARef.current;
         const ctx = canvas.getContext("2d");
 
-        // Clear canvas before writing text
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
         if (showPlaceholder) {
@@ -205,7 +204,7 @@ const App = () => {
                 <Button
                     label="Clear"
                     onClick={() => clearCanvas(canvasARef)}
-                    disabled={isProcessing}
+                    disabled={isProcessing || showPlaceholder}
                     raised
                     className="
                     !bg-gradient-to-r !from-amber-400 !to-yellow-500 
@@ -219,7 +218,7 @@ const App = () => {
                 <Button
                     label="Process Image"
                     onClick={handleProcess}
-                    disabled={isProcessing}
+                    disabled={isProcessing || showPlaceholder}
                     raised
                     className="
                     !bg-gradient-to-r !from-indigo-500 !to-purple-600 
@@ -263,16 +262,16 @@ const App = () => {
 
                     ) : fpgaDigit !== null ? (
                         <div className="flex flex-col items-center">
-                            <img 
-                                src={`/digits/${fpgaDigit}.png`} 
-                                alt="digit result"
-                                className="w-40 h-40 mb-4 drop-shadow-lg"
-                            />
+                            <p
+                                className="text-white font-bold mb-4 drop-shadow-lg"
+                                style={{ fontSize: '10rem', lineHeight: '1' }}
+                            >
+                                {fpgaDigit}
+                            </p>
                             <p className="text-white text-xl font-bold">
                                 FPGA Output: {fpgaDigit}
                             </p>
                         </div>
-
                     ) : (
                         <div className="grid grid-cols-10 gap-1">
                             {result.map((value, index) => (
