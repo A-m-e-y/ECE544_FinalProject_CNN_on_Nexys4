@@ -163,73 +163,144 @@ const App = () => {
     // };
 
     const sendToFpgaUART = async (array10x10) => {
+        const PKT_START = 0xA5;
+        const PKT_STOP = 0x5A;
+
         try {
             console.log("Requesting serial port…");
             const port = await navigator.serial.requestPort();
             await port.open({ baudRate: 115200 });
 
-            console.log("Port opened.");
-
-            const writer = port.writable.getWriter();
+            const textDecoder = new TextDecoder();
             const reader = port.readable.getReader();
+            const writer = port.writable.getWriter();
 
-            const PKT_START = 0xA5;
-            // const PKT_CMD_IMAGE = 0x01;
-            const PKT_STOP = 0x5A;
+            // --------------------------------------------------------
+            // 1) FLUSH INPUT (same idea as Python flush_input)
+            // --------------------------------------------------------
+            console.log("Flushing stale logs…");
+            const flushUntilQuiet = async (quietMs = 300) => {
+                let lastTime = performance.now();
+                while (performance.now() - lastTime < quietMs) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    if (value && value.length > 0) {
+                        lastTime = performance.now();  // activity → extend timer
+                    }
+                }
+            };
+            await flushUntilQuiet();
 
-            // ---- Build packet exactly like Python ----
+            // Reset stream (like ser.reset_input_buffer in Python)
+            reader.releaseLock();
+            const newReader = port.readable.getReader();
+
+            // --------------------------------------------------------
+            // 2) BUILD PACKET EXACTLY LIKE PYTHON
+            // struct.pack('<I', u)
+            // u is the float32 bit-pattern converted to uint32
+            // --------------------------------------------------------
+            console.log("Building TX packet…");
+
             const packet = [];
-
-            // Start + Command + length (100 = 0x64 = 100 words)
             packet.push(PKT_START);
-            // packet.push(PKT_CMD_IMAGE);
-            // packet.push(100 & 0xFF, (100 >> 8) & 0xFF);
 
-            // Convert each float → IEEE754 float32 → uint32 → LE bytes
             for (let i = 0; i < 100; i++) {
-                const fval = array10x10[i];
+                const f = array10x10[i];
 
+                // Convert JS float → IEEE754 float32 (little-endian)
                 const buf = new ArrayBuffer(4);
                 const view = new DataView(buf);
+                view.setFloat32(0, f, true);
 
-                // EXACT Python behavior:
-                // struct.pack('<I', u) where u = float32 → uint32 bits
-                // 1) Convert JS float → float32
-                // 2) Read same 4 bytes as uint32 little-endian
-                view.setFloat32(0, fval, true);
-
+                // Push the 4 LE bytes same as struct.pack('<I')
                 packet.push(view.getUint8(0));
                 packet.push(view.getUint8(1));
                 packet.push(view.getUint8(2));
                 packet.push(view.getUint8(3));
             }
 
-            // End byte
             packet.push(PKT_STOP);
 
-            // Convert to Uint8Array
             const pktBytes = new Uint8Array(packet);
             console.log("TX Packet:", pktBytes);
 
-            // ---- SEND packet ----
+            // --------------------------------------------------------
+            // 3) SEND IMAGE FRAME (same as Python send_image_bits)
+            // --------------------------------------------------------
             await writer.write(pktBytes);
-            writer.releaseLock();
-            console.log("Packet sent. Waiting for FPGA response…");
+            await writer.releaseLock();
+            console.log("Packet sent.");
 
-            // ---- READ exactly 1 byte ----
-            const { value/*, done*/ } = await reader.read();
-            reader.releaseLock();
+            // --------------------------------------------------------
+            // 4) READ LOGS & PREDICTION (Python read_logs_and_pred)
+            // --------------------------------------------------------
+            console.log("Streaming logs…");
+            let predictedLineValue = null;
+            let rawPredByte = null;
+
+            let buffer = "";
+            let sawPredictionLine = false;
+            let postDeadline = null;
+
+            const logReader = async () => {
+                const decoder = new TextDecoder();
+                let startTime = performance.now();
+
+                while (true) {
+                    const { value, done } = await newReader.read();
+                    if (done) break;
+                    if (!value) continue;
+
+                    for (let byte of value) {
+                        // Printable ASCII → accumulate in buffer
+                        if (byte >= 32 && byte <= 126 || byte === 10 || byte === 13) {
+                            const ch = String.fromCharCode(byte);
+                            buffer += ch;
+                            console.log(ch, "");
+                        } else {
+                            // Non-printable: possible raw pred byte
+                            if (sawPredictionLine && rawPredByte === null) {
+                                rawPredByte = byte;
+                            }
+                        }
+                    }
+
+                    // Detect "PREDICTED CLASS:" like Python using regex
+                    if (!sawPredictionLine && buffer.includes("PREDICTED CLASS:")) {
+                        const matches = [...buffer.matchAll(/PREDICTED\s+CLASS:\s*(\d+)/g)];
+                        if (matches.length > 0) {
+                            predictedLineValue = parseInt(matches[matches.length - 1][1], 10);
+                            sawPredictionLine = true;
+                            postDeadline = performance.now() + 1000; // 1s same as Python
+                        }
+                    }
+
+                    if (sawPredictionLine && postDeadline && performance.now() > postDeadline) {
+                        break;
+                    }
+
+                    // 15s total timeout same as Python
+                    if (performance.now() - startTime > 15000) break;
+                }
+            };
+
+            await logReader();
+            await newReader.releaseLock();
             await port.close();
-            
-            if (!value || value.length === 0) {
-                console.error("No FPGA response (timeout)");
-                return null;
+
+            console.log("--- End of log stream ---");
+
+            let finalPred = null;
+
+            if (predictedLineValue !== null) {
+                finalPred = predictedLineValue;
+            } else if (rawPredByte !== null) {
+                finalPred = rawPredByte;
             }
 
-            const prediction = value[0];
-            console.log("FPGA Returned:", prediction);
-
-            return prediction; // return same as python script
+            console.log("Final prediction:", finalPred);
+            return finalPred;
 
         } catch (err) {
             console.error("UART Error:", err);
