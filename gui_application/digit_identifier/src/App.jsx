@@ -174,7 +174,7 @@ const App = () => {
             const reader = port.readable.getReader();
 
             const PKT_START = 0xA5;
-            const PKT_CMD_IMAGE = 0x01;
+            // const PKT_CMD_IMAGE = 0x01;
             const PKT_STOP = 0x5A;
 
             // ---- Build packet exactly like Python ----
@@ -182,8 +182,8 @@ const App = () => {
 
             // Start + Command + length (100 = 0x64 = 100 words)
             packet.push(PKT_START);
-            packet.push(PKT_CMD_IMAGE);
-            packet.push(100 & 0xFF, (100 >> 8) & 0xFF);
+            // packet.push(PKT_CMD_IMAGE);
+            // packet.push(100 & 0xFF, (100 >> 8) & 0xFF);
 
             // Convert each float → IEEE754 float32 → uint32 → LE bytes
             for (let i = 0; i < 100; i++) {
