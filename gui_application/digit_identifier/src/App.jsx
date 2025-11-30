@@ -153,154 +153,93 @@ const App = () => {
         minHeight: '100vh',
     };
 
-    // const sendToFpgaUART = async (array10x10) => {
-    //     return new Promise((resolve) => {
-    //         setTimeout(() => {
-    //             const simulatedDigit = Math.floor(Math.random() * 10);
-    //             resolve(simulatedDigit);
-    //         }, 3000); 
-    //     });
-    // };
-
     const sendToFpgaUART = async (array10x10) => {
-        const PKT_START = 0xA5;
-        const PKT_STOP = 0x5A;
-
         try {
             console.log("Requesting serial port…");
             const port = await navigator.serial.requestPort();
             await port.open({ baudRate: 115200 });
 
-            const textDecoder = new TextDecoder();
-            const reader = port.readable.getReader();
             const writer = port.writable.getWriter();
+            const reader = port.readable.getReader();
 
-            // --------------------------------------------------------
-            // 1) FLUSH INPUT (same idea as Python flush_input)
-            // --------------------------------------------------------
-            console.log("Flushing stale logs…");
-            const flushUntilQuiet = async (quietMs = 300) => {
-                let lastTime = performance.now();
-                while (performance.now() - lastTime < quietMs) {
-                    const { value, done } = await reader.read();
-                    if (done) break;
-                    if (value && value.length > 0) {
-                        lastTime = performance.now();  // activity → extend timer
+            async function flushInput() {
+                console.log("Flushing stale boot logs…");
+                let lastRx = performance.now();
+
+                while (performance.now() - lastRx < 300) {
+
+                    const readPromise = reader.read();
+
+                    const result = await Promise.race([
+                        readPromise,
+                        new Promise(res => setTimeout(() => res({ timeout: true }), 50))
+                    ]);
+
+                    if (!result.timeout) {
+                        const { value } = result;
+                        if (value && value.length > 0) {
+                            lastRx = performance.now();
+                            console.log(new TextDecoder().decode(value));
+                        }
                     }
                 }
-            };
-            await flushUntilQuiet();
 
-            // Reset stream (like ser.reset_input_buffer in Python)
+                console.log("Flush complete.");
+            }
+
+            await flushInput();
             reader.releaseLock();
+
             const newReader = port.readable.getReader();
 
-            // --------------------------------------------------------
-            // 2) BUILD PACKET EXACTLY LIKE PYTHON
-            // struct.pack('<I', u)
-            // u is the float32 bit-pattern converted to uint32
-            // --------------------------------------------------------
-            console.log("Building TX packet…");
+            const PKT_START = 0xA5;
+            const PKT_STOP = 0x5A;
 
             const packet = [];
             packet.push(PKT_START);
 
-            for (let i = 0; i < 100; i++) {
-                const f = array10x10[i];
-
-                // Convert JS float → IEEE754 float32 (little-endian)
+            for (let v of array10x10) {
                 const buf = new ArrayBuffer(4);
-                const view = new DataView(buf);
-                view.setFloat32(0, f, true);
-
-                // Push the 4 LE bytes same as struct.pack('<I')
-                packet.push(view.getUint8(0));
-                packet.push(view.getUint8(1));
-                packet.push(view.getUint8(2));
-                packet.push(view.getUint8(3));
+                const dv = new DataView(buf);
+                dv.setFloat32(0, v, true);
+                packet.push(dv.getUint8(0), dv.getUint8(1), dv.getUint8(2), dv.getUint8(3));
             }
 
             packet.push(PKT_STOP);
 
             const pktBytes = new Uint8Array(packet);
-            console.log("TX Packet:", pktBytes);
 
-            // --------------------------------------------------------
-            // 3) SEND IMAGE FRAME (same as Python send_image_bits)
-            // --------------------------------------------------------
+            console.log("Sending frame…");
             await writer.write(pktBytes);
-            await writer.releaseLock();
-            console.log("Packet sent.");
+            writer.releaseLock();
 
-            // --------------------------------------------------------
-            // 4) READ LOGS & PREDICTION (Python read_logs_and_pred)
-            // --------------------------------------------------------
-            console.log("Streaming logs…");
-            let predictedLineValue = null;
-            let rawPredByte = null;
+            let logs = "";
+            let predicted = null;
+            const decoder = new TextDecoder();
 
-            let buffer = "";
-            let sawPredictionLine = false;
-            let postDeadline = null;
+            const predRegex = /PREDICTED\s+CLASS:\s*(\d+)/;
 
-            const logReader = async () => {
-                const decoder = new TextDecoder();
-                let startTime = performance.now();
+            const start = performance.now();
 
-                while (true) {
-                    const { value, done } = await newReader.read();
-                    if (done) break;
-                    if (!value) continue;
+            while (performance.now() - start < 15000) {
+                const { value, done } = await newReader.read();
+                if (done || !value) break;
 
-                    for (let byte of value) {
-                        // Printable ASCII → accumulate in buffer
-                        if (byte >= 32 && byte <= 126 || byte === 10 || byte === 13) {
-                            const ch = String.fromCharCode(byte);
-                            buffer += ch;
-                            console.log(ch, "");
-                        } else {
-                            // Non-printable: possible raw pred byte
-                            if (sawPredictionLine && rawPredByte === null) {
-                                rawPredByte = byte;
-                            }
-                        }
-                    }
+                const txt = decoder.decode(value);
+                logs += txt;
+                console.log(txt);
 
-                    // Detect "PREDICTED CLASS:" like Python using regex
-                    if (!sawPredictionLine && buffer.includes("PREDICTED CLASS:")) {
-                        const matches = [...buffer.matchAll(/PREDICTED\s+CLASS:\s*(\d+)/g)];
-                        if (matches.length > 0) {
-                            predictedLineValue = parseInt(matches[matches.length - 1][1], 10);
-                            sawPredictionLine = true;
-                            postDeadline = performance.now() + 1000; // 1s same as Python
-                        }
-                    }
-
-                    if (sawPredictionLine && postDeadline && performance.now() > postDeadline) {
-                        break;
-                    }
-
-                    // 15s total timeout same as Python
-                    if (performance.now() - startTime > 15000) break;
+                const match = predRegex.exec(logs);
+                if (match) {
+                    predicted = parseInt(match[1]);
+                    break;
                 }
-            };
-
-            await logReader();
-            await newReader.releaseLock();
-            await port.close();
-
-            console.log("--- End of log stream ---");
-
-            let finalPred = null;
-
-            if (predictedLineValue !== null) {
-                finalPred = predictedLineValue;
-            } else if (rawPredByte !== null) {
-                finalPred = rawPredByte;
             }
 
-            console.log("Final prediction:", finalPred);
-            return finalPred;
+            newReader.releaseLock();
+            await port.close();
+
+            return predicted;
 
         } catch (err) {
             console.error("UART Error:", err);
