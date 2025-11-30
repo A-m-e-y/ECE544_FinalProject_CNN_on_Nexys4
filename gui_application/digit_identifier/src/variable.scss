@@ -1,0 +1,25 @@
+/*----------------------------------------------------------------*/
+/*  Variables
+/*----------------------------------------------------------------*/
+
+// Typography
+$font-family-body: 'Roboto', 'Helvetica Neue', 'Arial', sans-serif;
+$font-family-code: 'Monaco', 'Menlo', 'Consolas', 'Ubuntu Mono', monospace;
+
+$font-size-root: 62.5%;
+$font-size-base: 1.3rem;
+:root{
+    --fb-primary :  rgb(35, 54, 105);
+    --fb-accent : rgb(247, 150, 29);
+    --fb-font-family : 'Lato', sans-serif;
+    --fb-font-family-regular : 'Lato-Regular', sans-serif;
+    --fb-font-family-bold : 'Lato-Bold', sans-serif;
+    --fb-font-family-extrabold : 'Lato-ExtraBold', sans-serif;
+    --gradient-bg : linear-gradient(76deg, #6498ff, #1f05a4);
+    --active-tab : rgb(247, 150, 29);
+    --fb-link : rgb(66, 165, 245);
+    --fb-accent-btn-hover : #E3832A;
+    --component-color: #42A5F5;
+    --error-color:#f66f6f;
+    --fb-text-color: #333333;
+}
