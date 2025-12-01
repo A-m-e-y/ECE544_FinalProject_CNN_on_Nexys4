@@ -12,6 +12,7 @@ const App = () => {
     const [showPlaceholder, setShowPlaceholder] = useState(true);
     const [isProcessing, setIsProcessing] = useState(false);
     const [fpgaDigit, setFpgaDigit] = useState(null); 
+    const [savedPort, setSavedPort] = useState(false);
 
     const useDrawing = (canvasRef) => {
         useEffect(() => {
@@ -155,9 +156,21 @@ const App = () => {
 
     const sendToFpgaUART = async (array10x10) => {
         try {
-            console.log("Requesting serial port…");
-            const port = await navigator.serial.requestPort();
-            await port.open({ baudRate: 115200 });
+            let port = null;
+            if (!savedPort) {
+                console.log("Requesting serial port for first time...");
+                port = await navigator.serial.requestPort();
+                console.log(port);
+                await port.open({ baudRate: 115200 });
+                setSavedPort(true);
+            } else {
+                const ports = await navigator.serial.getPorts();
+                console.log(ports);
+                if (ports.length > 0) {
+                    console.log("Reusing previously authorized port...");
+                    port = ports[1];
+                }
+            }
 
             const writer = port.writable.getWriter();
             const reader = port.readable.getReader();
@@ -237,7 +250,7 @@ const App = () => {
             }
 
             newReader.releaseLock();
-            await port.close();
+            // await port.close();
 
             return predicted;
 
@@ -252,7 +265,7 @@ const App = () => {
         setFpgaDigit(null);
 
         const digit = await sendToFpgaUART(result);
-
+        
         setFpgaDigit(digit);
         setIsProcessing(false);
         setResult([]);
@@ -341,7 +354,7 @@ const App = () => {
 
             <div className="flex gap-10 justify-center items-start mt-10">
 
-                { (result.length !== 0 || fpgaDigit) && 
+                { (result.length !== 0 || fpgaDigit !== null) && 
                     <div className="p-4 bg-gray-900/30 rounded-xl 
                                     shadow-[0_0_25px_rgba(100,100,255,0.3)]
                                     border border-indigo-500/40
