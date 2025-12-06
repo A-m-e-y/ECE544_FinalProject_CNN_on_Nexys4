@@ -3,6 +3,7 @@ import 'primeicons/primeicons.css';
 import 'primereact/resources/primereact.min.css';
 import backgroundImage from './images/cnn_background_image.png';
 import { Button } from 'primereact/button';
+import { Dropdown } from 'primereact/dropdown';
 
 import React, { useRef, useState, useEffect } from "react";
 
@@ -13,6 +14,8 @@ const App = () => {
     const [isProcessing, setIsProcessing] = useState(false);
     const [fpgaDigit, setFpgaDigit] = useState(null); 
     const [savedPort, setSavedPort] = useState(false);
+    const [mode, setMode] = useState('inference');
+    const [digit, setDigit] = useState(0);
 
     const useDrawing = (canvasRef) => {
         useEffect(() => {
@@ -168,7 +171,7 @@ const App = () => {
                 console.log(ports);
                 if (ports.length > 0) {
                     console.log("Reusing previously authorized port...");
-                    port = ports[1];
+                    port = ports[0];
                 }
             }
 
@@ -284,6 +287,66 @@ const App = () => {
         }
         return '0x' + hex.toUpperCase();
     };
+
+    const downloadFile = (filename, content) => {
+        const blob = new Blob([content], { type: 'text/x-c' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    };
+
+    // Get next image index for a digit from localStorage (persistent across sessions)
+    const getNextImageIndex = (d) => {
+        const key = `img_counter_${d}`;
+        const v = parseInt(localStorage.getItem(key) || '0', 10);
+        localStorage.setItem(key, (v + 1).toString());
+        return v; // return previous value as the index for this new file
+    };
+
+    const makeHeaderFileContent = (digitVal, index, floatArray) => {
+        // Header guard: IMG_<digit>_<index>_H
+        const guard = `IMG_${digitVal}_${index}_H`;
+        // Build data values in hex (100 entries) with 10 per line as in your format
+        const hexVals = floatArray.map(v => float32ToHex(v));
+        let lines = '';
+        for (let row = 0; row < 10; row++) {
+            const rowVals = hexVals.slice(row * 10, row * 10 + 10);
+            lines += '    ' + rowVals.join(', ') + (row < 9 ? ',\n' : '\n');
+        }
+
+        const content =
+        `#ifndef ${guard}
+        #define ${guard}
+        #include <stdint.h>
+        static const uint32_t img_${digitVal}_${index}[100] = {
+        ${lines}};
+        #endif // ${guard}
+        `;
+        return content;
+    };
+
+    // Called when user wants to generate training image .h file
+    const generateImageForTraining = () => {
+        // create the 10x10 float array from the canvas
+        const floatArray = processCanvas(canvasARef);
+
+        // get index and file name
+        const idx = getNextImageIndex(digit);
+        const filename = `img_${digit}_${idx}.h`;
+
+        const content = makeHeaderFileContent(digit, idx, floatArray);
+        // trigger download
+        downloadFile(filename, content);
+
+        // also set as result so UI shows hex values until user clears (optional)
+        //setResult(floatArray);
+        //alert(`Generated ${filename} and started download. (If your browser strips folders, check your Downloads folder; index for this digit is now ${idx + 1}.)`);
+    };
     
     return (
     <div className="App min-h-screen bg-gray-900 bg-blend-overlay" style={backgroundStyle}>
@@ -292,9 +355,49 @@ const App = () => {
             <p className="bg-gradient-to-r from-fuchsia-400 via-purple-500 to-indigo-400 
                         bg-clip-text text-transparent text-7xl font-extrabold 
                         drop-shadow-[0_0_25px_rgba(209,0,255,0.4)]
-                        pb-14 text-center">
+                        pb-8 text-center">
                 Welcome to ECE 544 Project Demo
             </p>
+
+            {/* <div className="flex justify-center mb-6">
+                <div className="p-3 bg-gray-900/30 rounded-2xl border border-purple-500/30 backdrop-blur-xl flex gap-6 items-center">
+                    <div className="flex flex-col text-white">
+                        <label className="mb-1 font-semibold">Mode</label>
+                        <Dropdown
+                            value={mode}
+                            options={[
+                                { label: 'Train', value: 'train' },
+                                { label: 'Inference', value: 'inference' }
+                            ]}
+                            onChange={(e) => setMode(e.value)}
+                            placeholder="Select Mode"
+                            className="w-48 bg-gray-800 text-white border border-gray-600 rounded-lg shadow-md 
+                                    px-3 py-2 focus:ring-2 focus:ring-indigo-500"
+                            panelClassName="bg-gray-900 text-white text-lg p-2 border border-gray-700 rounded-lg shadow-xl"
+                            dropdownIcon="pi pi-chevron-down text-indigo-300"
+                            style={{ fontSize: '16px' }}
+                        />
+                    </div>
+
+                    <div className="flex flex-col text-white">
+                        <label className="mb-1 font-semibold">Digit</label>
+                        <Dropdown
+                            value={digit}
+                            options={Array.from({ length: 10 }, (_, i) => ({
+                                label: i.toString(),
+                                value: i
+                            }))}
+                            onChange={(e) => setDigit(e.value)}
+                            placeholder="Select Digit"
+                            className="w-48 bg-gray-800 text-white border border-gray-600 rounded-lg shadow-md 
+                                    px-3 py-2 focus:ring-2 focus:ring-indigo-500"
+                            panelClassName="bg-gray-900 text-white text-lg p-2 border border-gray-700 rounded-lg shadow-xl"
+                            dropdownIcon="pi pi-chevron-down text-indigo-300"
+                        />
+                    </div>
+
+                </div>
+            </div>
 
             <div className="flex justify-center mb-10">
                 <div className="p-4 bg-gray-900/40 rounded-2xl shadow-[0_0_25px_rgba(139,92,246,0.4)] 
@@ -339,7 +442,7 @@ const App = () => {
 
                 <Button
                     label="Submit"
-                    onClick={handleSubmit}
+                    onClick={(mode === 'inference') ? handleSubmit : generateImageForTraining}
                     disabled={isProcessing || result.length === 0}
                     raised
                     className="
@@ -350,10 +453,101 @@ const App = () => {
                     hover:!shadow-[0_0_30px_rgba(52,211,153,0.9)]
                     transition-all"
                 />
+            </div> */}
+
+            <div className="flex justify-center gap-10 mt-8">
+                <div className="flex flex-col gap-10">
+                    <div className="p-3 bg-gray-900/30 rounded-2xl border border-purple-500/30 
+                                    backdrop-blur-xl flex gap-6 items-center">
+                        <div className="flex flex-col text-white">
+                            <label className="mb-1 font-semibold">Mode</label>
+                            <Dropdown
+                                value={mode}
+                                options={[
+                                    { label: 'Train', value: 'train' },
+                                    { label: 'Inference', value: 'inference' }
+                                ]}
+                                onChange={(e) => setMode(e.value)}
+                                placeholder="Select Mode"
+                                className="w-48 bg-gray-800 text-white border border-gray-600 rounded-lg shadow-md 
+                                            px-3 py-2 focus:ring-2 focus:ring-indigo-500"
+                                panelClassName="bg-gray-900 text-white text-lg p-2 border border-gray-700 rounded-lg shadow-xl"
+                                dropdownIcon="pi pi-chevron-down text-indigo-300"
+                            />
+                        </div>
+
+                        <div className="flex flex-col text-white">
+                            <label className="mb-1 font-semibold">Digit</label>
+                            <Dropdown
+                                value={digit}
+                                options={Array.from({ length: 10 }, (_, i) => ({
+                                    label: i.toString(),
+                                    value: i
+                                }))}
+                                onChange={(e) => setDigit(e.value)}
+                                placeholder="Select Digit"
+                                className="w-48 bg-gray-800 text-white border border-gray-600 rounded-lg shadow-md 
+                                            px-3 py-2 focus:ring-2 focus:ring-indigo-500"
+                                panelClassName="bg-gray-900 text-white text-lg p-2 border border-gray-700 rounded-lg shadow-xl"
+                                dropdownIcon="pi pi-chevron-down text-indigo-300"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="flex flex-col gap-6">
+                        <Button
+                            label="Clear"
+                            onClick={() => clearCanvas(canvasARef)}
+                            disabled={isProcessing || showPlaceholder}
+                            raised
+                            className="!bg-gradient-to-r !from-amber-400 !to-yellow-500 
+                                    !text-gray-900 !font-semibold 
+                                    !shadow-[0_0_15px_rgba(255,200,0,0.6)]
+                                    !rounded-xl !h-12 !w-40 !text-lg
+                                    hover:!shadow-[0_0_25px_rgba(255,220,50,0.8)]
+                                    transition-all"
+                        />
+
+                        <Button
+                            label="Process Image"
+                            onClick={handleProcess}
+                            disabled={isProcessing || showPlaceholder}
+                            raised
+                            className="!bg-gradient-to-r !from-indigo-500 !to-purple-600 
+                                    !text-white !font-semibold 
+                                    !shadow-[0_0_20px_rgba(147,51,234,0.7)]
+                                    !rounded-xl !h-12 !w-48 !text-lg
+                                    hover:!shadow-[0_0_30px_rgba(168,85,247,0.9)]
+                                    transition-all"
+                        />
+
+                        <Button
+                            label="Submit"
+                            onClick={(mode === 'inference') ? handleSubmit : generateImageForTraining}
+                            disabled={isProcessing || result.length === 0}
+                            raised
+                            className="!bg-gradient-to-r !from-green-400 !to-emerald-600
+                                    !text-white !font-semibold
+                                    !shadow-[0_0_20px_rgba(16,185,129,0.7)]
+                                    !rounded-xl !h-12 !w-40 !text-lg
+                                    hover:!shadow-[0_0_30px_rgba(52,211,153,0.9)]
+                                    transition-all"
+                        />
+                    </div>
+                </div>
+
+                <div className="p-4 bg-gray-900/40 rounded-2xl shadow-[0_0_25px_rgba(139,92,246,0.4)] 
+                                border border-purple-500/40 backdrop-blur-xl">
+                    <canvas
+                        ref={canvasARef}
+                        width={201}
+                        height={201}
+                        className="rounded-xl shadow-[0_0_35px_rgba(255,255,255,0.2)] bg-white touch-none"
+                    />
+                </div>
             </div>
 
             <div className="flex gap-10 justify-center items-start mt-10">
-
                 { (result.length !== 0 || fpgaDigit !== null) && 
                     <div className="p-4 bg-gray-900/30 rounded-xl 
                                     shadow-[0_0_25px_rgba(100,100,255,0.3)]
@@ -365,7 +559,6 @@ const App = () => {
                             <i className="pi pi-spin pi-spinner text-6xl text-indigo-400"></i>
                             <p className="text-white mt-4 text-lg">Processing...</p>
                         </div>
-
                     ) : fpgaDigit !== null ? (
                         <div className="flex flex-col items-center">
                             <p
@@ -393,7 +586,6 @@ const App = () => {
                     )}
                 </div>}
             </div>
-
         </div>
     </div>
     );
